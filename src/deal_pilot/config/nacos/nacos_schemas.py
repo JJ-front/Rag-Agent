@@ -6,7 +6,7 @@ from deal_pilot.config.openai_settings import openai_settings
 
 class AgentModelConfig(BaseModel):
     name: str = Field(default=openai_settings.default_model)
-    thinking: bool = Field(default=True)
+    thinking: bool = Field(default=False)
     temperature: float | None = Field(default=None)
     top_p: float | None = Field(default=None)
 
@@ -68,6 +68,18 @@ class SplitterConfig(BaseModel):
 type MilvusCollection = Literal["feishu_doc"]
 
 
+class RerankerConfig(BaseModel):
+    reranker: Literal["rrf", "weighted", "model"] = Field(default="rrf")
+    params: dict = Field(default_factory=dict)
+
+
+class RetrieverConfig(BaseModel):
+    fetch_k: int = Field(default=10)
+    k: int = Field(default=4)
+    param: list[dict] | None = Field(default=None)
+    reranker: RerankerConfig = Field(default_factory=RerankerConfig)
+
+
 class RagConfig(BaseModel):
     image_parser: RagImageParser = Field(default_factory=RagImageParser)
     embedding_model: RagEmbeddingModel = Field(default_factory=RagEmbeddingModel)
@@ -77,3 +89,4 @@ class RagConfig(BaseModel):
             name: RagStoreConfig() for name in get_args(MilvusCollection.__value__)
         }
     )
+    retriever: RetrieverConfig = Field(default_factory=RetrieverConfig)

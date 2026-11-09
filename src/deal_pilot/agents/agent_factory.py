@@ -22,8 +22,11 @@ import asyncio
 from deal_pilot.utils.func_tools import func_cache
 from importlib import import_module
 from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.structured_output import ResponseFormat
 
-_AGENT_FACTORIES = {"web_agent": "deal_pilot.agents.web"}
+_AGENT_FACTORIES = {
+    "retrieve_agent": "deal_pilot.agents.retrieve_agent",
+}
 
 
 class AgentFactory(ABC):
@@ -82,7 +85,10 @@ class AgentFactory(ABC):
         if not self.agent_config:
             return []
         specs = await asyncio.gather(
-            *[get_agent_spec(agent_name) for agent_name in self.agent_config.subagents]
+            *[
+                get_agent_spec(agent_name, sync_skills=False)
+                for agent_name in self.agent_config.subagents
+            ]
         )
 
         subagents = []
@@ -133,6 +139,7 @@ class AgentFactory(ABC):
             "subagents": self.get_subagents(subagents),
             "middleware": self.get_middlewares(),
             "backend": self.get_backend(),
+            "response_format": self.get_response_format(),
         }
         if len(skills):
             config["skills"] = [f"/shared/skills/{self.name}"]
@@ -153,3 +160,6 @@ class AgentFactory(ABC):
 
     def get_state_schema(self) -> type[DeepAgentState] | None:
         return DeepAgentState
+
+    def get_response_format(self) -> ResponseFormat[Any] | None:
+        return None

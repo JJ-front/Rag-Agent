@@ -12,8 +12,9 @@
 - **RAG 索引**：飞书文档 → 结构化解析 → 切分 → 向量化 → Milvus
 - **对象存储**：MinIO（用户上传文件、Agent 产物、沙箱共享卷）
 
-> 说明：当前 RAG 部分实现的是**文档索引链路**（`feishu_doc_index` 图），Agent 默认工具集里**没有检索工具**。
-> 也就是说"文档能进 Milvus"已验证，"Agent 基于 Milvus 回答问题"还需要自己补一个检索工具。详见 [已知限制](#8-已知限制)。
+> 说明：RAG 部分现在有两条链路：
+> **文档索引**（`feishu_doc_index` 图）和**检索问答**（`retrieve_agent` 图 + `milvus_search` / `milvus_query` 工具 + `retrieve_context` 中间件）。
+> 索引后的文档可以检索，是否启用取决于 Nacos AgentSpec 里配置的工具和子 Agent。详见 [已知限制](#8-已知限制)。
 
 ---
 
@@ -208,7 +209,7 @@ make test
 完成标志：
 
 ```text
-348 passed
+479 passed
 ```
 
 如果这里就失败，先别往下走，把报错贴出来排查。
@@ -671,7 +672,35 @@ Invoke-RestMethod -Uri http://127.0.0.1:4000/v1/chat/completions `
 > 这一步失败就说明网关没配好，先解决网关，不要急着启动 Agent。
 > 常见原因：模型名和 3.11 里不一致、上游 Key 错、上游地址多了或少了 `/v1`。
 
-> ✅ **完成这一步后**：`.env` 里模型地址、master key、模型名、Nacos 密码都齐了，Agent 具备启动条件。
+网关验证通过后，顺便生成 Agent API 的签名密钥（3.14 调接口时要用）。
+
+先生成一个随机串：
+
+```powershell
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+把输出填进 `.env`：
+
+```dotenv
+AGENT_TOKEN_SECRET=<上一步生成的随机串>
+AGENT_TOKEN_TTL_SECONDS=5184000
+AGENT_SERVER_URL=http://127.0.0.1:2024
+```
+
+说明：
+
+- `AGENT_TOKEN_SECRET` 至少 32 字节，只在本机内部使用，不要提交到 git
+- 改过这个值，之前签发的 Token 全部失效，需要重新生成
+- `AGENT_SERVER_URL` 是评测 / 飞书回调调用 Agent Server 的地址，本地就是 `http://127.0.0.1:2024`
+
+检查这几项都不是空：
+
+```powershell
+Select-String -Path .env -Pattern '^AGENT_'
+```
+
+> ✅ **完成这一步后**：`.env` 里模型地址、master key、模型名、Nacos 密码、Agent 签名密钥都齐了，Agent 具备启动条件。
 
 ### 3.13 启动 Agent
 
@@ -693,6 +722,9 @@ make dev
 
 如果启动日志里出现 `Graph import exceeded the expected startup time`，只是启动慢，不影响使用。
 
+> 飞书事件监听默认关闭（`FEISHU_EVENTS_ENABLED=false`），普通对话和 RAG 不需要飞书应用。
+> 要做飞书机器人收发消息，先填 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`，再把 `FEISHU_EVENTS_ENABLED` 改成 `true`。
+
 > ✅ **完成这一步后**：Agent 服务已经在 `127.0.0.1:2024` 跑起来，可以接受 HTTP 请求了。
 
 ### 3.14 验证 Agent 服务
@@ -709,33 +741,38 @@ make dev
 {"ok":true}
 ```
 
-再看图有没有注册（需要 Token）：
+再看图有没有注册（需要 JWT）。先生成一个 Token：
 
 ```powershell
-$h = @{ Authorization = "Bearer admin" }
+$token = uv run python -c "from deal_pilot.security.agent_token import create_agent_token; print(create_agent_token('admin'))"
+$h = @{ Authorization = "Bearer $token" }
+
 (Invoke-RestMethod -Uri http://127.0.0.1:2024/assistants/search `
   -Method Post -Headers $h -ContentType "application/json" -Body '{}').graph_id
 ```
 
-成功标志：输出三张图
+成功标志：输出四张图
 
 ```text
 feishu_doc_index
 delete_old_trace
 main_agent
+retrieve_agent
 ```
 
-> 可用 Token：`admin`、`user_1`、`user_2`、`test_user`（见 `src/deal_pilot/utils/mock_user.py`）。
-> 这是 Mock 鉴权，只适合本地开发。
+> Token 由 `.env` 的 `AGENT_TOKEN_SECRET` 签名，有效期见 `AGENT_TOKEN_TTL_SECONDS`（默认 60 天）。
+> 没配 `AGENT_TOKEN_SECRET` 时，需要认证的接口会返回 503。
 
-> ✅ **完成这一步后**：你确认了服务活着，并且三张图（主 Agent、清理 Trace、飞书索引）都注册成功。
+> ✅ **完成这一步后**：你确认了服务活着，并且四张图（主 Agent、检索 Agent、清理 Trace、飞书索引）都注册成功。
 
 ### 3.15 发出第一条真实消息
 
 在刚才那个新窗口里执行：
 
 ```powershell
-$h = @{ Authorization = "Bearer admin" }
+# 如果重开了窗口，先重新生成 Token；同一窗口可以沿用上一步的 $h
+$token = uv run python -c "from deal_pilot.security.agent_token import create_agent_token; print(create_agent_token('admin'))"
+$h = @{ Authorization = "Bearer $token" }
 
 $body = @{
   assistant_id = "main_agent"
@@ -760,7 +797,7 @@ Invoke-RestMethod -Uri http://127.0.0.1:2024/runs/wait `
 |-------------|------|--------|
 | `{"__error__":{"error":"ConnectError"...}}` | Nacos 没起来 / 连不上 | `make up SERVICE=nacos`，确认 `NACOS_SERVER_ADDRESS` |
 | `{"__error__":{"error":"UnsupportedProtocol"...}}` | `.env` 没生效，地址是空的 | 检查 `.env` 是否存在、是否重启过 `make dev` |
-| `401 Unauthorized` | 没带 Token | 请求头加 `Authorization: Bearer admin` |
+| `401 Unauthorized` | 没带 Token / Token 过期 | 重新生成 JWT，见 [3.14](#314-验证-agent-服务) |
 | `model not found` / `404` | 模型名不对 | `OPENAI_DEFAULT_MODEL` 必须和 3.11 的 `model_name` 一致 |
 | `Incorrect API key` / `401` | Key 不对 | 直连填服务商 Key；走 LiteLLM 填 master key |
 | `400 ... enable_thinking` | 该模型不支持思考参数 | 见 [Q11](#q11-模型报-400-unknown-parameter-enable_thinking) |
@@ -798,14 +835,14 @@ LANGFUSE_BASE_URL=http://localhost:3000
 全部打勾就说明**完整跑通**了：
 
 - [ ] `uv run python -V` 输出 `Python 3.13.11`
-- [ ] `make test` 输出 `348 passed`
+- [ ] `make test` 输出 `479 passed`
 - [ ] `make ps` 显示 15 个容器，该 healthy 的都 healthy
 - [ ] Nacos 能登录，`.env` 里的 `NACOS_PASSWORD` 和页面一致
 - [ ] `/v1/models` 能看到你在 3.11 里配置的模型
 - [ ] 直接调 `/v1/chat/completions` 能拿到上游模型的回答
 - [ ] `make dev` 输出 `API: http://127.0.0.1:2024`
 - [ ] `GET /ok` 返回 `{"ok":true}`
-- [ ] `assistants/search` 能看到 `main_agent`、`delete_old_trace`、`feishu_doc_index`
+- [ ] `assistants/search` 能看到 `main_agent`、`retrieve_agent`、`delete_old_trace`、`feishu_doc_index`
 - [ ] `POST /runs/wait` 能返回一条正常回答
 - [ ] （可选）Langfuse 能看到 Trace
 
@@ -815,7 +852,7 @@ LANGFUSE_BASE_URL=http://localhost:3000
 
 | 服务 | 地址 | 账号 / 说明 |
 |------|------|-------------|
-| **Agent API** | <http://127.0.0.1:2024> | `Authorization: Bearer admin` |
+| **Agent API** | <http://127.0.0.1:2024> | `Authorization: Bearer <JWT>`，生成方式见 [3.14](#314-验证-agent-服务) |
 | API 文档 | <http://127.0.0.1:2024/docs> | 自动生成 |
 | LangGraph Studio | `https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024` | 自定义鉴权，Studio 可能要求填 Token |
 | **Langfuse** | <http://localhost:3000> | 首次访问自己注册账号 |
@@ -936,15 +973,17 @@ GET /nacos/v3/client/ai/agentspecs?namespaceId=public&name=main_agent&label=prod
   },
   "tools": ["get_current_time", "web_search", "fetch_url"],
   "mcps": {},
-  "subagents": [],
+  "subagents": ["retrieve_agent"],
   "skills": []
 }
 ```
 
 - `instruction_main_agent/AGENTS__MD` 这份资源会作为 system prompt
 - `tools` 只能填代码里注册过的名字，见 `src/deal_pilot/tools/__init__.py`：
-  `fetch_url`、`web_search`、`get_current_time`、`ask_user_question`、`deploy`
-- `subagents` 目前只支持 `web_agent`（见 `agent_factory.py` 的 `_AGENT_FACTORIES`）
+  `fetch_url`、`web_search`、`get_current_time`、`ask_user_question`、`deploy`、
+  `milvus_search`、`milvus_query`、`get_bucket_file_url`
+- `subagents` 目前支持 `web_agent` 和 `retrieve_agent`（见 `agent_factory.py` 的 `_AGENT_FACTORIES`）
+- RAG 问答推荐把 `retrieve_agent` 配成子 Agent：它会在回答前检索 Milvus，并把结果作为上下文交给模型
 
 **没配 AgentSpec 会怎样**：Nacos 返回 `code != 0` 时，代码返回 `AgentSpec(name="main_agent")`，
 即空 prompt、空工具、模型取 `OPENAI_DEFAULT_MODEL`。还能对话，但只是一个裸模型。
@@ -961,8 +1000,9 @@ GET /nacos/v3/client/ai/agentspecs?namespaceId=public&name=main_agent&label=prod
 | `sandbox_config` | `deal_pilot` | OpenSandbox 沙箱镜像、资源限制、挂载 |
 | `rag_config` | `deal_pilot` | 向量库、embedding 模型 |
 
-格式是 YAML。这两份配置**仓库里没有样例**，需要用沙箱/索引功能时按 `nacos_schemas.py` 里的
-`OpenSandboxConfig` 等模型自己建。不建的话代码会返回空配置，普通对话不受影响。
+格式是 YAML。`rag_config` 已经有样例：`src/deal_pilot/config/nacos/rag_config_example.yaml`，
+可以直接复制到 Nacos 再改模型名和参数。`sandbox_config` 和 `main_agent` 的 AgentSpec 仍需按
+`nacos_schemas.py` 里的模型自己建。不建的话代码会返回空配置，普通对话不受影响。
 
 ### 6.3 改完要不要重启
 
@@ -1049,13 +1089,22 @@ Agent 启动第一件事就是拿 Nacos 的 access token，拿不到直接抛异
 
 ### Q6. 调用 Agent 报 `401 Unauthorized`
 
-接口要带 Token：
+接口要带 JWT：
 
 ```text
-Authorization: Bearer admin
+Authorization: Bearer <JWT>
 ```
 
-可用 Token：`admin`、`user_1`、`user_2`、`test_user`（见 `src/deal_pilot/utils/mock_user.py`）。
+生成方式：
+
+```powershell
+$token = uv run python -c "from deal_pilot.security.agent_token import create_agent_token; print(create_agent_token('admin'))"
+```
+
+Token 由 `.env` 的 `AGENT_TOKEN_SECRET` 签名，默认有效期由 `AGENT_TOKEN_TTL_SECONDS` 控制。
+常见原因：没带 Token、Token 过期、改过 `AGENT_TOKEN_SECRET` 导致旧 Token 失效。
+
+未配置 `AGENT_TOKEN_SECRET` 时，认证接口会返回 `503`。
 
 ### Q7. 模型报 `model not found` / `401`
 
@@ -1204,14 +1253,18 @@ make test
 
 诚实列一下，别被 README 的架构图骗了：
 
-1. **RAG 只有索引侧**。`feishu_doc_index` 图能完成"飞书文档 → 解析 → 切分 → 向量化 → 写 Milvus"，
-   但 Agent 的工具集里没有 `search_documents` 之类的检索工具，问答闭环需要自己补。
-2. **Nacos 配置没有开箱样例**。`sandbox_config`、`rag_config`、`main_agent` 的 AgentSpec 都要自己建。
-3. **没有评测数据集**。`src/deal_pilot/benchmarks` 有评测代码，但没有配套的 dataset 文件。
-4. **鉴权是 Mock 的**。`mock_user.py` 里四个写死的用户，只适合本地开发。
+1. **RAG 有了检索链路，但默认不一定启用**。`feishu_doc_index` 负责“飞书文档 → 解析 → 切分 → 向量化 → 写 Milvus”，
+   `retrieve_agent` + `milvus_search` / `milvus_query` 负责检索问答。主 Agent 是否用检索，取决于 Nacos AgentSpec 里
+   有没有配置对应工具或把 `retrieve_agent` 配成子 Agent；检索效果还取决于 `rag_config` 和已入库的文档。
+2. **Nacos 配置只给了一份样例**。`rag_config` 有 `rag_config_example.yaml`，但 `sandbox_config` 和 `main_agent`
+   的 AgentSpec 仍要自己建。
+3. **没有评测数据集**。`src/deal_pilot/benchmarks` 有评测代码，但配套 dataset 不在仓库里。
+4. **鉴权是单密钥 JWT**。`AGENT_TOKEN_SECRET` 只做签名和过期校验，没有用户中心、角色和细粒度权限；
+   Token 需要本地生成。未配置密钥时认证接口返回 503，适合本地/内网，不适合直接暴露公网。
 5. **中文 Windows 要手动设 UTF-8**，见 Q1；用 `make dev` 已经自动处理。
-6. **前 4 步（依赖、测试、容器、Agent 服务）已在本机验证**。真实对话和飞书入库
-   还需要有效的模型 Key / Nacos 密码 / 飞书应用，按第 3 节的流程自己走一遍。
+6. **环境与代码已验证，真实链路还差外部 Key**。依赖安装、`make test`（479 passed）、`docker compose config`、
+   四张图导入都已在本机验证；真实对话、Milvus 检索和飞书入库还需要有效的模型 Key / Nacos 密码 / 飞书应用，
+   按第 3 节的流程自己走一遍。
 
 ---
 
@@ -1241,23 +1294,24 @@ make logs SERVICE=langfuse-web
 ```text
 deal-pilot/
 ├── src/deal_pilot/
-│   ├── agents/              # Agent 工厂：main_agent、web_agent
+│   ├── agents/              # Agent 工厂：main_agent、retrieve_agent、web_agent
 │   ├── app/                 # 自定义 FastAPI 路由（Langfuse 告警 / 实验 Webhook）
 │   ├── backends/            # Deep Agents 的沙箱后端
 │   ├── benchmarks/          # 评测脚本与打分器
 │   ├── config/              # pydantic-settings 配置
-│   │   └── nacos/           # AgentSpec / Prompt / MCP / 配置中心客户端
-│   ├── feishu/              # 飞书开放平台 API 封装
+│   │   └── nacos/           # AgentSpec / Prompt / MCP / 配置中心客户端 + rag_config 样例
+│   ├── feishu/              # 飞书开放平台 API 封装 / 事件监听
 │   ├── graphs/              # 独立图：delete_old_trace、feishu_doc_index
-│   ├── middlewares/         # Agent 中间件（轮次摘要）
-│   ├── rag/                 # 文档解析 / 切分 / embedding / Milvus store
-│   ├── security/            # LangGraph 鉴权
-│   ├── tools/               # Agent 工具：web、time、deploy、ask_user
-│   └── utils/               # 模型构造、Trace、沙箱、MinIO 等
+│   ├── middlewares/         # Agent 中间件（轮次摘要、检索上下文）
+│   ├── rag/                 # 文档解析 / 切分 / embedding / Milvus store / retriever
+│   ├── security/            # LangGraph 鉴权 + JWT 签发/验签
+│   ├── tools/               # Agent 工具：web、time、deploy、ask_user、milvus、bucket
+│   └── utils/               # 模型构造、Trace、沙箱、MinIO、run_agent 等
 ├── tests/
-│   ├── units/               # 单元测试，348 条，不需要外部依赖
+│   ├── units/               # 单元测试，479 条，不需要外部依赖
 │   └── intergrations/       # 集成测试，需要 MinIO / OpenSandbox
 ├── docker/
+│   ├── milvus/              # Milvus user.yaml
 │   ├── nacos/               # Nacos 插件状态
 │   └── sandbox/             # 沙箱镜像 Dockerfile
 ├── docker-compose.yml       # 15 个服务
@@ -1288,7 +1342,7 @@ deal-pilot/
 | `make down` | 停止容器，保留数据 |
 | `make clean` | 停止并删除数据卷 |
 | `make dev` | 启动 Agent（`127.0.0.1:2024`） |
-| `make test` | 单元测试（348 条，不需要 Docker） |
+| `make test` | 单元测试（479 条，不需要 Docker） |
 | `make test-all` | 全部测试（需要 MinIO + OpenSandbox） |
 | `make build` | 构建 Agent 镜像 |
 
@@ -1297,7 +1351,7 @@ deal-pilot/
 ```powershell
 # 1. 环境
 uv run python -V                       # Python 3.13.11
-make test                              # 348 passed
+make test                              # 479 passed
 
 # 2. 容器
 make ps                                # 15 行，该 healthy 的都 healthy
@@ -1309,10 +1363,11 @@ $gw = @{ Authorization = "Bearer sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89
 # 4. Agent（另开终端先执行 make dev）
 (Invoke-WebRequest http://127.0.0.1:2024/ok -UseBasicParsing).Content   # {"ok":true}
 
-$h = @{ Authorization = "Bearer admin" }
+$token = uv run python -c "from deal_pilot.security.agent_token import create_agent_token; print(create_agent_token('admin'))"
+$h = @{ Authorization = "Bearer $token" }
 (Invoke-RestMethod -Uri http://127.0.0.1:2024/assistants/search `
   -Method Post -Headers $h -ContentType "application/json" -Body '{}').graph_id
-# feishu_doc_index / delete_old_trace / main_agent
+# feishu_doc_index / delete_old_trace / main_agent / retrieve_agent
 
 # 5. 真实对话
 $body = @{

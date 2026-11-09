@@ -5,6 +5,7 @@ class OpenAISettings(BaseSettingsWithEnv):
     api_key: str = ""
     base_url: str = ""
     default_model: str = ""
+    root_url: str = ""
 
     model_config = {"env_prefix": "OPENAI_"}
 

@@ -27,11 +27,13 @@ dependencies = [
     "paddlepaddle>=3.3.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
+    "pyjwt>=2.15.0",
     "pymilvus>=3.0.2",
     "pypdf>=6.20.1",
     "pyyaml>=6.0.3",
     "tavily-python>=0.7.26",
     "types-aiobotocore[s3]>=3.9.2",
+    "typesafe-sdk>=0.7.5",
 ]
 
 [dependency-groups]
