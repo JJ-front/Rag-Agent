@@ -165,6 +165,10 @@ services:
       STORE_PROMPTS_IN_SPEND_LOGS: "True"
       LANGFUSE_TRACING_ENVIRONMENT: gateway
       OTEL_ENVIRONMENT_NAME: gateway
+      # 上游模型 Key：从 .env 透传进容器，供 litellm-config.yaml 的 os.environ/... 使用
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      UPSTREAM_OPENAI_API_KEY: ${UPSTREAM_OPENAI_API_KEY:-}
       REDIS_HOST: litellm_redis
       REDIS_PORT: 6379
       REDIS_DB: 0

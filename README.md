@@ -19,9 +19,9 @@
 
 ## 目录
 
-- [1. 先看这张表：能跑到什么程度](#1-先看这张表能跑到什么程度)
-- [2. 准备工作（只做一次）](#2-准备工作只做一次)
-- [3. 从零跑通：一步一步照做](#3-从零跑通一步一步照做)
+- [1. 跑通之后你能做什么](#1-跑通之后你能做什么)
+- [2. 开始前的机器要求](#2-开始前的机器要求)
+- [3. 一步步跑通](#3-一步步跑通)
 - [4. 服务与端口](#4-服务与端口)
 - [5. 配置说明](#5-配置说明)
 - [6. Nacos 里需要配置什么](#6-nacos-里需要配置什么)
@@ -32,43 +32,37 @@
 
 ---
 
-## 1. 先看这张表：能跑到什么程度
+## 1. 跑通之后你能做什么
 
-这个项目分两层：
+这个项目分两层，建议按顺序来：
 
-- **最小跑通**：不花钱、不需要模型 Key。依赖装好、容器起来、Agent 服务能响应 `/ok`。
-- **完整跑通**：在最小跑通的基础上，填模型 Key 和 Nacos 密码，能真正对话。
+| 阶段 | 需要什么 | 跑通后你能做什么 |
+|------|----------|------------------|
+| **最小跑通** | 不需要模型 Key，不花钱 | 15 个基础设施容器全部在线，Agent 服务能响应 `/ok`，能打开 Nacos / Langfuse / LiteLLM 后台 |
+| **完整跑通** | 一个模型 Key + Nacos 密码 | 能真正和 Agent 对话，请求走 LiteLLM 网关，Agent 配置从 Nacos 下发 |
 
-按下面顺序做，每一步都有明确的成功标志：
-
-| # | 做什么 | 依赖 | 成功标志 | 验证状态 |
-|---|--------|------|----------|----------|
-| 1 | `uv sync` | uv + Python 3.13.11 | 装好依赖，生成 `.venv` | ✅ 已验证 |
-| 2 | `make test` | 无 | `348 passed` | ✅ 已验证 |
-| 3 | `make up` | Docker Desktop | 15 个容器 Up | ✅ 已验证 |
-| 4 | 配置 LiteLLM 网关 | 上游模型 Key | `/v1/models` 能看到模型 | ⚠️ 当前为空，需在 UI 添加模型 |
-| 5 | `make dev` | 上面全部 | `/ok` 返回 `{"ok":true}` | ✅ 已验证 |
-| 6 | 真实对话一轮 | 上面全部 + Nacos 密码 | Agent 返回回答 | ⚠️ 需要你填 Key 后验证 |
-| 7 | 飞书文档入库 Milvus | 上面全部 + 飞书应用 | Milvus 出现 collection | ⚠️ 未实测 |
-
-> 第一次做，直接从 [第 2 节](#2-准备工作只做一次) 开始，按顺序一条条执行即可。
-> 全程使用 **PowerShell**，不要用 CMD。
+> 下面从**安装环境**开始，一条线走到底。全程使用 **PowerShell**，不要用 CMD。
+> 每一步都写了「完成标志」和「完成这一步后你能做什么」，没出现完成标志就不要跳到下一步。
 
 ---
 
-## 2. 准备工作（只做一次）
-
-### 2.1 你需要什么
+## 2. 开始前的机器要求
 
 | 项目 | 要求 |
 |------|------|
 | 操作系统 | Windows 10/11（macOS / Linux 也可，命令自行替换） |
 | 内存 | **16 GB 以上**（ClickHouse + Milvus + Nacos 比较吃内存） |
-| 磁盘 | 预留 **20 GB**（镜像约 8–10 GB，还有数据卷） |
-| 网络 | 首次拉镜像需要能访问 Docker Hub 和 `docker.langfuse.com`；国内网络建议先配好代理，见 [Q10](#q10-docker-拉镜像超时--卡住) |
+| 磁盘 | 预留 **20 GB**（镜像 8–10 GB，还有数据卷） |
+| 网络 | 首次拉镜像要能访问 Docker Hub 和 `docker.langfuse.com`；国内网络先配代理，见 [Q10](#q10-docker-拉镜像超时--卡住) |
 | 虚拟化 | Docker Desktop 需要开启 BIOS 虚拟化和 WSL2 |
 
-### 2.2 安装 Docker Desktop
+---
+
+## 3. 一步步跑通
+
+> 顺序不要跳。每一步的「完成标志」出现之后，再做下一步。
+
+### 3.1 安装 Docker Desktop
 
 ```powershell
 winget install --id Docker.DockerDesktop -e
@@ -92,9 +86,11 @@ docker compose version
 docker info
 ```
 
-`docker info` 能输出 `Server Version: ...` 才算成功。
+完成标志：`docker info` 能输出 `Server Version: ...`。
 
-### 2.3 安装 uv
+> ✅ **完成这一步后**：你可以在本机启动容器。后面 Nacos、LiteLLM、Milvus、Langfuse 全都靠它。
+
+### 3.2 安装 uv（Python 环境管理）
 
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
@@ -106,13 +102,17 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 winget install --id astral-sh.uv -e
 ```
 
-装完**关掉当前 PowerShell 再重新打开**，验证：
+装完**关掉当前 PowerShell 再重新打开**。
+
+完成标志：
 
 ```powershell
 uv --version
 ```
 
-### 2.4 安装 GNU Make
+> ✅ **完成这一步后**：你能用 `uv` 自动安装本项目指定的 Python 3.13.11 和全部依赖，不用手动配 Python 环境。
+
+### 3.3 安装 GNU Make
 
 ```powershell
 choco install make -y
@@ -124,16 +124,18 @@ choco install make -y
 scoop install make
 ```
 
-验证：
+完成标志：
 
 ```powershell
 make --version
 ```
 
 > 实在装不上 Make 也不影响运行：`Makefile` 里每个命令都对应一条原始命令，
-> 你也可以用 `.\dev.ps1` 启动 Agent。但后面的步骤默认你已经装好 Make。
+> 也可以用 `.\dev.ps1` 启动 Agent。但后面的步骤默认你已经装好 Make。
 
-### 2.5 一次检查全部工具
+> ✅ **完成这一步后**：后面所有操作都能用 `make xxx` 一条命令完成，不用记长命令。
+
+### 3.4 检查工具是否齐全
 
 ```powershell
 git --version
@@ -143,31 +145,11 @@ docker --version
 docker compose version
 ```
 
-四个都输出版本号，再往下走。
+完成标志：五个命令都输出版本号。
 
----
+> ✅ **完成这一步后**：环境准备结束，可以开始拿代码了。
 
-## 3. 从零跑通：一步一步照做
-
-> 建议按顺序执行。每一步的"成功标志"没出现，就先解决问题，不要跳到下一步。
-
-总进度表（做完一项打个勾）：
-
-| 步骤 | 命令 | 成功标志 |
-|------|------|----------|
-| 1 | `git clone` | 能看到 `Makefile`、`docker-compose.yml` |
-| 2 | `uv sync` | 生成 `.venv` |
-| 3 | `make test` | `348 passed` |
-| 4 | `make env` | 生成 `.env` |
-| 5 | `make up` | `make ps` 显示 15 个容器 |
-| 6 | 浏览器设置 Nacos 密码 | 能登录 `localhost:8080` |
-| 7 | 在 LiteLLM UI 添加模型 | `/v1/models` 能看到模型 |
-| 8 | 编辑 `.env` | 3 个 `OPENAI_*` 和 `NACOS_PASSWORD` 都填好 |
-| 9 | `make dev` | 输出 `API: http://127.0.0.1:2024` |
-| 10 | 调用 `/ok` | 返回 `{"ok":true}` |
-| 11 | 调用 `/runs/wait` | 返回一条 AI 回答 |
-
-### 3.1 第 1 步：获取代码
+### 3.5 获取代码
 
 如果你有仓库地址：
 
@@ -191,26 +173,31 @@ cd <解压后的项目目录>
 Get-ChildItem
 ```
 
-应该能看到：`Makefile`、`docker-compose.yml`、`pyproject.toml`、`src`、`tests`。
+完成标志：能看到 `Makefile`、`docker-compose.yml`、`pyproject.toml`、`src`、`tests`。
 
-### 3.2 第 2 步：安装 Python 依赖
+> ✅ **完成这一步后**：你本地有一份完整项目，后面所有命令都在这个目录里执行。
+
+### 3.6 安装 Python 依赖
 
 ```powershell
 uv sync
 ```
 
 `uv` 会自动读取 `.python-version`（3.13.11），下载对应 Python 并创建 `.venv`。
-成功标志：出现 `Installed ... packages`，目录下多了一个 `.venv`。
 
-确认 Python 版本：
+完成标志：出现 `Installed ... packages`，目录下多了一个 `.venv`。
+
+确认版本：
 
 ```powershell
 uv run python -V
 ```
 
-必须是 `Python 3.13.11`。如果提示版本不匹配，见 [Q3](#q3-uv-sync-报-resolved-to-python-31315-which-is-incompatible-with-31311)。
+必须是 `Python 3.13.11`。版本不匹配见 [Q3](#q3-uv-sync-报-resolved-to-python-31315-which-is-incompatible-with-31311)。
 
-### 3.3 第 3 步：先跑单元测试
+> ✅ **完成这一步后**：Python、依赖、虚拟环境都就位，可以运行和测试项目代码了。
+
+### 3.7 先跑单元测试
 
 这一步不需要 Docker、不需要任何 Key，用来确认依赖和环境没问题：
 
@@ -218,7 +205,7 @@ uv run python -V
 make test
 ```
 
-成功标志：
+完成标志：
 
 ```text
 348 passed
@@ -226,13 +213,15 @@ make test
 
 如果这里就失败，先别往下走，把报错贴出来排查。
 
-### 3.4 第 4 步：生成本地配置 `.env`
+> ✅ **完成这一步后**：你确认了 Python 环境是好的。后面再出问题，可以直接排除「依赖装坏了」这种可能。
+
+### 3.8 生成本地配置 `.env`
 
 ```powershell
 make env
 ```
 
-成功标志：
+完成标志：
 
 ```text
 .env created from .env.example
@@ -241,16 +230,18 @@ make env
 > `make env` 只在 `.env` 不存在时创建，**不会覆盖你已经填好的 Key**。
 > 如果提示 `.env already exists, skipped`，说明已经有一份了，直接编辑它即可。
 
-现在先不用填全部内容。只需要知道后面会改这两处：
+现在先不用填全部内容，后面会改这几处：
 
 | 变量 | 什么时候填 | 填什么 |
 |------|-----------|--------|
-| `NACOS_PASSWORD` | 第 6 步设置完 Nacos 密码后 | 你刚设置的密码 |
-| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_DEFAULT_MODEL` | 第 7 步 | 模型服务的地址、Key、模型名 |
+| `OPEN_SANDBOX_API_KEY` | 不用改 | 模板里已有本地默认值 |
+| `NACOS_PASSWORD` | 3.10 设置完 Nacos 密码后 | 你刚设置的密码 |
+| `DASHSCOPE_API_KEY` 等 | 3.11 配置网关时 | 上游模型的 Key |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_DEFAULT_MODEL` | 3.12 | 网关的 master key、地址、模型名 |
 
-`OPEN_SANDBOX_API_KEY` 模板里已经有默认值，本地开发不用改。
+> ✅ **完成这一步后**：你有一份可编辑的配置文件。下一步启动容器时，compose 就会读它。
 
-### 3.5 第 5 步：启动基础设施
+### 3.9 启动基础设施
 
 确认 Docker Desktop 已经启动（托盘图标绿色），然后：
 
@@ -299,7 +290,9 @@ shared-minio          Up (healthy)
 >
 > 如果卡在拉镜像、报超时，见 [Q10](#q10-docker-拉镜像超时--卡住)。
 
-### 3.6 第 6 步：第一次登录 Nacos，设置密码
+> ✅ **完成这一步后**：15 个基础设施容器全部在线，Nacos、LiteLLM、Milvus、Langfuse、MinIO 的后台都能打开。
+
+### 3.10 第一次登录 Nacos，设置密码
 
 1. 浏览器打开 <http://localhost:8080>
 2. 首次访问会让你**初始化管理员密码**，用户名是 `nacos`
@@ -317,15 +310,178 @@ NACOS_PASSWORD=你刚设置的密码
 >
 > `.env` 改完后，如果 Agent 已经在运行，需要 `Ctrl+C` 停掉再重新 `make dev`。
 
-### 3.7 第 7 步：配置 LiteLLM 网关（添加模型）
+> ✅ **完成这一步后**：Agent 启动时能登录 Nacos，拿到 AgentSpec / Prompt / MCP 配置。
+
+### 3.11 配置 LiteLLM 网关（添加模型）
 
 > 本项目默认走 LiteLLM 网关（`.env` 里 `OPENAI_BASE_URL=http://127.0.0.1:4000/v1`）。
 > 网关刚启动时是空的，一个模型都没有，所以**这一步不能跳过**。
 
-先确认网关本身是通的：
+#### 3.11.1 四个"名字 / 钥匙"别搞混
+
+网关配置最容易错的地方，是把下面这几样东西搞混。先看表：
+
+| 名称 | 是什么 | 在哪设置 / 查看 | 填到哪 |
+|------|--------|------------------|--------|
+| **master key** | 网关的 **root 管理凭证**，`sk-` 开头 | `docker-compose.yml` → `LITELLM_MASTER_KEY`（**不是**在 UI 里创建） | `.env` 的 `OPENAI_API_KEY`（本项目默认做法） |
+| **子 Key**（Virtual Key） | 网关的**普通调用凭证**，可限额、限模型、可吊销 | LiteLLM UI → `Virtual Keys` / `Keys` → `Create Key` | `.env` 的 `OPENAI_API_KEY`（二选一，生产推荐） |
+| **LiteLLM UI 账号** | 登录后台用的用户名 / 密码 | `docker-compose.yml` → `UI_USERNAME` / `UI_PASSWORD` | 只在浏览器登录用，**不是** API Key |
+| **上游厂商 Key** | 阿里云 / DeepSeek / OpenAI 发给你的 Key | 各厂商控制台 | `.env` 的 `DASHSCOPE_API_KEY` 等，再被 `litellm-config.yaml` 引用 |
+| **公开模型名**（`model_name`） | 网关对外的模型名字 | `litellm-config.yaml` 的 `model_name` 或 UI | `.env` 的 `OPENAI_DEFAULT_MODEL` |
+
+一句话：
+
+- **master key 确实是访问网关的凭证**，但它的位置在 `docker-compose.yml`，不是 UI。
+- **UI 里 `Create Key` 创建的是子 Key**，不是 master key。子 Key 也能访问网关，只是权限可以收窄。
+- **`admin` / `123456` 只是登录后台的账号密码**，不能拿来当 API Key 用。
+
+请求链路：
+
+```text
+Agent（.env: OPENAI_BASE_URL + OPENAI_API_KEY = master key 或子 Key）
+   │
+   │  POST /v1/chat/completions   model=<公开模型名>
+   ▼
+LiteLLM 网关 http://127.0.0.1:4000
+   │  用 litellm_params 里的 api_base + api_key
+   ▼
+上游模型（阿里云百炼 / DeepSeek / OpenAI / 本地 Ollama ...）
+```
+
+#### 3.11.2 master key 从哪来（不在 UI 里创建）
+
+本项目的 master key 直接写在 `docker-compose.yml` 的 litellm 服务里：
+
+```yaml
+litellm:
+  environment:
+    LITELLM_MASTER_KEY: "sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89ad8a1a77447edb77e3b9"
+```
+
+查看当前值：
+
+```powershell
+Select-String -Path docker-compose.yml -Pattern 'LITELLM_MASTER_KEY'
+```
+
+验证它能不能用：
 
 ```powershell
 $gw = @{ Authorization = "Bearer sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89ad8a1a77447edb77e3b9" }
+(Invoke-WebRequest http://127.0.0.1:4000/v1/models -Headers $gw -UseBasicParsing).StatusCode
+```
+
+- 返回 `200`：key 对，能访问网关
+- 返回 `401`：key 不对，重新从 `docker-compose.yml` 复制
+
+几个注意点：
+
+1. **master key 必须以 `sk-` 开头**，这是 LiteLLM 的格式要求
+2. **不要拿上游厂商的 Key 当 master key**，两者完全不是一个东西
+3. **改 master key 要两处同步**：`docker-compose.yml` 和 `.env` 的 `OPENAI_API_KEY`，然后 `make restart SERVICE=litellm`
+4. 本地开发为了方便才把 master key 写在 compose 里；**真实生产环境**应该用环境变量 / secrets 管理，不要提交到 git
+5. 子 Key 也能填进 `OPENAI_API_KEY`，和 master key 的用法完全一样，区别见下一节
+
+**自己生成一个 master key**
+
+LiteLLM **不发放** master key，也不用注册；它就是**你自己随便生成的一串随机码**，只要满足：
+
+- 以 `sk-` 开头
+- 足够长（建议 32 字节随机数，也就是 64 个十六进制字符）
+
+用下面任意一条生成（每次输出都不一样）：
+
+```powershell
+# PowerShell（5.1 / 7 都能用）
+$b = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+"sk-" + ([BitConverter]::ToString($b) -replace '-','').ToLower()
+```
+
+```powershell
+# Python（项目已有 uv 环境）
+uv run python -c "import secrets; print('sk-' + secrets.token_hex(32))"
+```
+
+```text
+sk-8f3c1e...（示例：sk- 加上 64 位十六进制，共 67 个字符）
+```
+
+生成后**两处都要改**：
+
+1. `docker-compose.yml` → `LITELLM_MASTER_KEY`
+2. `.env` → `OPENAI_API_KEY`
+
+然后重启网关：
+
+```powershell
+make restart SERVICE=litellm
+```
+
+> 仓库里现在的 `sk-d09e0b...` 就是一段 32 字节随机数的十六进制，只是为了本地开箱即用。
+> 如果这个项目要给别人看或部署，建议换成自己生成的。
+
+**顺带说 `LITELLM_SALT_KEY`**
+
+`docker-compose.yml` 里还有一个 `LITELLM_SALT_KEY`，它**不是**访问凭证，而是 LiteLLM
+**加密数据库里子 Key** 用的盐。同样是随机码，生成方式一样：
+
+```powershell
+uv run python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+两点注意：
+
+- `LITELLM_SALT_KEY` **不需要和 master key 一样**，各生成各的
+- 已经有子 Key 之后**不要随便改 SALT_KEY**，否则数据库里存过的子 Key 会解不开；改 master key 不影响已创建的子 Key
+
+#### 3.11.3 （可选）在 UI 里创建子 Key
+
+如果你在 UI 里看到的是 `Virtual Keys`（有些版本叫 `Keys`）→ `Create Key` 页面，那是在**创建子 Key**，不是 master key。
+
+适用场景：
+
+- 想给项目 / 同事单独发一个 Key，能随时吊销
+- 想限制预算（`Budget`）、限速（`RPM / TPM`）、限定只能访问某几个模型
+- 不想把 root 权限的 master key 写进 `.env`
+
+操作：
+
+1. 打开 <http://localhost:4000/ui>，用 `admin` / `123456` 登录
+2. 左侧进入 `Virtual Keys` → `Create Key`（或 `Create New Key`）
+3. 按需填写：
+   - **Key Alias**：备注名，例如 `deal-pilot-local`
+   - **Models**：允许访问的模型，建议只勾你要用的
+   - **Max Budget / Budget Duration**：预算上限，本地调试可留空
+   - **RPM / TPM Limit**：限速，本地调试可留空
+4. 创建后复制生成的 `sk-...`
+
+> 子 Key 通常**只在创建时完整显示一次**。没复制到就删掉重新建一个。
+
+拿到子 Key 后，把它填到 `.env` 的 `OPENAI_API_KEY` 即可，和 master key 用法一模一样：
+
+```dotenv
+OPENAI_API_KEY=sk-你刚创建的子Key
+```
+
+| | master key | 子 Key |
+|---|---|---|
+| 来源 | `docker-compose.yml` | LiteLLM UI 创建 |
+| 权限 | 全部（含管理接口） | 可限制模型 / 预算 / 速率 |
+| 能否吊销 | 改 compose 并重启 | UI 里一键删除 |
+| 适合 | 本机自用、调试 | 多人、演示、接近生产 |
+
+> 本项目 README 后面默认用 master key，少一步操作。你在面试或演示时，可以说清楚"生产会换成子 Key + 预算限制"，这是加分项。
+
+#### 3.11.4 确认网关活着，且当前是空的
+
+```powershell
+$gw = @{ Authorization = "Bearer sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89ad8a1a77447edb77e3b9" }
+
+# 1) 健康检查
+(Invoke-WebRequest http://127.0.0.1:4000/health/liveliness -UseBasicParsing).StatusCode   # 200
+
+# 2) 看看现在有哪些模型
 Invoke-RestMethod http://127.0.0.1:4000/v1/models -Headers $gw
 ```
 
@@ -335,60 +491,168 @@ Invoke-RestMethod http://127.0.0.1:4000/v1/models -Headers $gw
 {"data":[],"object":"list"}
 ```
 
-现在去 UI 里加模型：
+> 这一步返回 401，说明 Key 不对（master key 或子 Key）；返回 200 但列表为空，说明还没加模型，继续往下。
 
-1. 打开 <http://localhost:4000/ui>，用 `admin` / `123456` 登录
-2. 进入 `Models` → `Add Model`
-3. 填四样东西（不同版本字段名略有差异，认准含义即可）：
-   - **Public Model Name / Model Name**：网关对外的模型名，例如 `qwen-plus`，后面 `.env` 的 `OPENAI_DEFAULT_MODEL` 就填它
-   - **Provider**：上游服务商；没有对应选项就选 `OpenAI-Compatible`
-   - **API Base / Base URL**：上游服务地址，例如 `https://dashscope.aliyuncs.com/compatible-mode/v1`
-   - **API Key**：上游厂商的 Key（**不是**网关的 master key）
-4. 保存
+#### 3.11.5 方式 A（推荐）：写进 `litellm-config.yaml`
 
-回到终端再查一次：
+适合长期使用、要提交到仓库、要在简历/面试里展示的项目。配置在文件里看得见、可回滚，
+`make clean` 删数据卷也不会丢。
+
+##### A1. 把上游 Key 放进 `.env`
+
+打开 `.env`，在文件末尾加上你要用的厂商 Key：
+
+```dotenv
+# ---------- LiteLLM 上游模型 Key（只给网关容器用）----------
+DASHSCOPE_API_KEY=sk-你的百炼Key
+DEEPSEEK_API_KEY=
+UPSTREAM_OPENAI_API_KEY=
+```
+
+只填你要用的那一个，其他留空即可。这些变量会通过 `docker-compose.yml` 里的
+
+```yaml
+DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+```
+
+透传给 LiteLLM 容器，**不会传给 Agent 进程**。
+
+##### A2. 编辑 `litellm-config.yaml`
+
+仓库里已经放好了注释示例，把要用的那段取消注释、改掉模型名即可：
+
+```yaml
+model_list:
+  # ---- 阿里云百炼（通义千问）----
+  - model_name: qwen-plus                          # 网关对外名字（.env 的 OPENAI_DEFAULT_MODEL）
+    litellm_params:
+      model: openai/qwen-plus                      # 上游真实模型名
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: os.environ/DASHSCOPE_API_KEY        # 从 .env 读，不落盘
+
+  # ---- DeepSeek ----
+  # - model_name: deepseek-chat
+  #   litellm_params:
+  #     model: openai/deepseek-chat
+  #     api_base: https://api.deepseek.com/v1
+  #     api_key: os.environ/DEEPSEEK_API_KEY
+
+  # ---- OpenAI ----
+  # - model_name: gpt-4o-mini
+  #   litellm_params:
+  #     model: openai/gpt-4o-mini
+  #     api_key: os.environ/UPSTREAM_OPENAI_API_KEY
+
+router_settings:
+  optional_pre_call_checks:
+    - session_affinity
+```
+
+字段说明：
+
+| 字段 | 含义 | 注意 |
+|------|------|------|
+| `model_name` | 网关对外的名字 | `.env` 的 `OPENAI_DEFAULT_MODEL` 必须和它一字不差 |
+| `litellm_params.model` | 上游真实模型 | 统一写成 `openai/<模型名>` + `api_base`，兼容性最好 |
+| `litellm_params.api_base` | 上游地址 | 一般以 `/v1` 结尾，不要写成 `.../chat/completions` |
+| `litellm_params.api_key` | 上游 Key | 用 `os.environ/变量名` 引用 `.env`，不要把 Key 直接写进文件 |
+
+> `model: openai/xxx` 的意思是"用 OpenAI 兼容协议去调"，并不代表一定是 OpenAI 官方。
+> 百炼、DeepSeek、Moonshot、硅基流动等都有 OpenAI 兼容端点，都这么写。
+>
+> **不要把真实 Key 直接写进 `litellm-config.yaml`**，这个文件是要提交到 git 的。
+> 走 `os.environ/...`，Key 只留在被 `.gitignore` 忽略的 `.env` 里。
+
+##### A3. 重启 LiteLLM
+
+配置文件是挂载进容器的，改完必须重启才生效：
+
+```powershell
+make restart SERVICE=litellm
+```
+
+##### A4. 验证模型已经加载
 
 ```powershell
 $gw = @{ Authorization = "Bearer sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89ad8a1a77447edb77e3b9" }
 (Invoke-RestMethod http://127.0.0.1:4000/v1/models -Headers $gw).data.id
 ```
 
-成功标志：输出你刚添加的模型名，例如：
+成功标志：输出你配置的 `model_name`，例如：
 
 ```text
 qwen-plus
 ```
 
-> 这里看不到模型，就不要往下走。先回 UI 确认模型保存成功、上游 Key 没填错。
+看不到就 `make logs SERVICE=litellm` 看报错，多半是 YAML 缩进或者环境变量名写错了。
+
+#### 3.11.6 方式 B：在 LiteLLM UI 里添加（临时试用）
+
+适合只想先跑通、暂时不打算提交配置的情况。UI 添加的模型存在 LiteLLM 自己的 Postgres 数据卷里。
+
+> UI 里有两个容易混的页面：
+> - `Models`：**加模型**，这一节用这个
+> - `Virtual Keys`：**发 Key**，见 [3.11.3](#3113-可选在-ui-里创建子-key)
 >
-> UI 里添加的模型保存在 LiteLLM 自己的 Postgres 数据卷里，`make down` 不会丢；
-> 只有 `make clean` 删除数据卷后才会清空。
+> 不管哪个页面，都**不能创建 master key**，master key 只在 `docker-compose.yml` 里。
 
-### 3.8 第 8 步：把网关配置写进 `.env`
+1. 打开 <http://localhost:4000/ui>，用 `admin` / `123456` 登录
+2. 进入 `Models` → `Add Model`
+3. 填四样东西（不同版本字段名略有差异，认准含义即可）：
+   - **Public Model Name**：网关对外名字，例如 `qwen-plus`
+   - **Provider**：上游服务商；没有对应选项就选 `OpenAI-Compatible`
+   - **API Base / Base URL**：上游服务地址，例如 `https://dashscope.aliyuncs.com/compatible-mode/v1`
+   - **API Key**：上游厂商的 Key（**不是**网关的 master key）
+4. 保存，然后同样用 A4 的命令验证
 
-编辑 `.env`，填这四项：
+注意：
+
+- 不要和 `litellm-config.yaml` 里的 `model_name` 重名
+- `make down` 不会丢，`make clean` 会连数据卷一起删掉
+- UI 里加的模型不会出现在 git 里，换台机器要重新加
+
+#### 3.11.7 网关常见错误
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| `/v1/models` 返回 `401` | 请求头里的 Key 不对 | 用 `docker-compose.yml` 的 `LITELLM_MASTER_KEY`，或 3.11.3 里创建的子 Key |
+| `/v1/models` 返回空列表 | 模型没加载 | 检查 YAML 缩进、`make restart SERVICE=litellm`、`make logs SERVICE=litellm` |
+| `model not found` / `404` | `.env` 的 `OPENAI_DEFAULT_MODEL` 和 `model_name` 不一致 | 两边逐字对照，大小写也要一致 |
+| 上游返回 `401` | 厂商 Key 错、过期，或没透传到容器 | 确认 `.env` 里的 Key 已填，且 compose 里有对应的透传行 |
+| 上游返回 `404` | `api_base` 错了 | 多写/少写了 `/v1`，或写成了 `/chat/completions` 结尾 |
+| 请求超时 | 容器访问不了外网 | Docker Desktop 配代理，见 [Q10](#q10-docker-拉镜像超时--卡住) |
+| 日志里 `No models configured` | 整个 `model_list` 被注释掉了 | 至少保留一个模型再重启 |
+
+> 排错顺序永远是：**先 `/v1/models` 看模型有没有 → 再 `/v1/chat/completions` 看上游通不通 → 最后才启动 Agent**。
+
+> ✅ **完成这一步后**：网关里有一个能用的模型，用 master key 就能调通上游厂商的模型。
+
+### 3.12 把网关配置写进 `.env`
+
+编辑 `.env`，填这四项（`qwen-plus` 换成你在 3.11 里配的 `model_name`）：
 
 ```dotenv
 OPENAI_BASE_URL=http://127.0.0.1:4000/v1
 OPENAI_API_KEY=sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89ad8a1a77447edb77e3b9
 OPENAI_DEFAULT_MODEL=qwen-plus
-NACOS_PASSWORD=第 6 步设置的 Nacos 密码
+NACOS_PASSWORD=<你在 3.10 设置的密码>
 ```
 
 说明：
 
 - `OPENAI_BASE_URL` 填**网关地址**，不是上游地址
 - `OPENAI_API_KEY` 填 LiteLLM 的 **master key**（就是上面这一长串），不是上游厂商的 Key
-- `OPENAI_DEFAULT_MODEL` 必须和 UI 里的 **Public Model Name** 一模一样
+- `OPENAI_DEFAULT_MODEL` 必须和 3.11 里的 **`model_name` / Public Model Name** 一模一样
 - master key 以 `docker-compose.yml` 里的 `LITELLM_MASTER_KEY` 为准；改过 compose 就要跟着改
+- 上游厂商的 Key 在 3.11 已经放进 `.env` 的 `DASHSCOPE_API_KEY` 等变量里，这里不用重复
 
-检查四项都不是空：
+检查这些都不是空：
 
 ```powershell
-Select-String -Path .env -Pattern '^OPENAI_|^NACOS_PASSWORD'
+Select-String -Path .env -Pattern '^OPENAI_|^NACOS_PASSWORD|^DASHSCOPE_API_KEY'
 ```
 
-最后**先不启动 Agent**，直接通过网关发一条消息，确认"网关 → 上游模型"整条链路是通的：
+最后**先不启动 Agent**，直接通过网关发一条消息，确认"网关 → 上游模型"整条链路是通的（`model` 同样换成你的 `model_name`）：
 
 ```powershell
 $gw = @{ Authorization = "Bearer sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89ad8a1a77447edb77e3b9" }
@@ -405,9 +669,11 @@ Invoke-RestMethod -Uri http://127.0.0.1:4000/v1/chat/completions `
 成功标志：返回里有 `choices[0].message.content`，内容是一句正常回答。
 
 > 这一步失败就说明网关没配好，先解决网关，不要急着启动 Agent。
-> 常见原因：模型名和 UI 里不一致、上游 Key 错、上游地址多了或少了 `/v1`。
+> 常见原因：模型名和 3.11 里不一致、上游 Key 错、上游地址多了或少了 `/v1`。
 
-### 3.9 第 9 步：启动 Agent
+> ✅ **完成这一步后**：`.env` 里模型地址、master key、模型名、Nacos 密码都齐了，Agent 具备启动条件。
+
+### 3.13 启动 Agent
 
 ```powershell
 make dev
@@ -427,7 +693,9 @@ make dev
 
 如果启动日志里出现 `Graph import exceeded the expected startup time`，只是启动慢，不影响使用。
 
-### 3.10 第 10 步：验证 Agent 服务
+> ✅ **完成这一步后**：Agent 服务已经在 `127.0.0.1:2024` 跑起来，可以接受 HTTP 请求了。
+
+### 3.14 验证 Agent 服务
 
 另开一个 PowerShell 窗口，先做健康检查（不需要 Token）：
 
@@ -460,7 +728,9 @@ main_agent
 > 可用 Token：`admin`、`user_1`、`user_2`、`test_user`（见 `src/deal_pilot/utils/mock_user.py`）。
 > 这是 Mock 鉴权，只适合本地开发。
 
-### 3.11 第 11 步：发出第一条真实消息
+> ✅ **完成这一步后**：你确认了服务活着，并且三张图（主 Agent、清理 Trace、飞书索引）都注册成功。
+
+### 3.15 发出第一条真实消息
 
 在刚才那个新窗口里执行：
 
@@ -491,11 +761,13 @@ Invoke-RestMethod -Uri http://127.0.0.1:2024/runs/wait `
 | `{"__error__":{"error":"ConnectError"...}}` | Nacos 没起来 / 连不上 | `make up SERVICE=nacos`，确认 `NACOS_SERVER_ADDRESS` |
 | `{"__error__":{"error":"UnsupportedProtocol"...}}` | `.env` 没生效，地址是空的 | 检查 `.env` 是否存在、是否重启过 `make dev` |
 | `401 Unauthorized` | 没带 Token | 请求头加 `Authorization: Bearer admin` |
-| `model not found` / `404` | 模型名不对 | `OPENAI_DEFAULT_MODEL` 必须和服务商一致 |
+| `model not found` / `404` | 模型名不对 | `OPENAI_DEFAULT_MODEL` 必须和 3.11 的 `model_name` 一致 |
 | `Incorrect API key` / `401` | Key 不对 | 直连填服务商 Key；走 LiteLLM 填 master key |
 | `400 ... enable_thinking` | 该模型不支持思考参数 | 见 [Q11](#q11-模型报-400-unknown-parameter-enable_thinking) |
 
-### 3.12 第 12 步（可选）：在 Langfuse 里看到 Trace
+> ✅ **完成这一步后**：你已经完整跑通了「Agent → LiteLLM → 上游模型」这条链路，项目可以从头到尾用了。
+
+### 3.16 （可选）在 Langfuse 里看到 Trace
 
 不做这一步也能正常对话，只是没有链路追踪。
 
@@ -512,12 +784,16 @@ LANGFUSE_BASE_URL=http://localhost:3000
 4. `Ctrl+C` 停掉 `make dev`，重新启动
 5. 再发一次消息，回到 Langfuse 的 `Tracing` 页面，能看到刚才那一轮调用
 
-### 3.13 第 13 步（可选）：在 Nacos 里建 AgentSpec
+> ✅ **完成这一步后**：你能在 Langfuse 里看到每次对话的 Trace、Token 和耗时，方便排查和展示。
+
+### 3.17 （可选）在 Nacos 里建 AgentSpec
 
 不做这一步，Agent 就是一个"没有 system prompt、没有工具"的裸模型，仍然能回答，
 但不会用工具、也没有人设。想要完整形态，按 [第 6 节](#6-nacos-里需要配置什么) 建一个 `main_agent`。
 
-### 3.14 到这里检查一遍
+> ✅ **完成这一步后**：Agent 有了 system prompt、工具和子 Agent，才是这个项目设计里的完整形态。
+
+### 3.18 验收清单
 
 全部打勾就说明**完整跑通**了：
 
@@ -525,7 +801,7 @@ LANGFUSE_BASE_URL=http://localhost:3000
 - [ ] `make test` 输出 `348 passed`
 - [ ] `make ps` 显示 15 个容器，该 healthy 的都 healthy
 - [ ] Nacos 能登录，`.env` 里的 `NACOS_PASSWORD` 和页面一致
-- [ ] `/v1/models` 能看到你在 LiteLLM 里添加的模型
+- [ ] `/v1/models` 能看到你在 3.11 里配置的模型
 - [ ] 直接调 `/v1/chat/completions` 能拿到上游模型的回答
 - [ ] `make dev` 输出 `API: http://127.0.0.1:2024`
 - [ ] `GET /ok` 返回 `{"ok":true}`
@@ -573,7 +849,7 @@ LANGFUSE_BASE_URL=http://localhost:3000
 
 | 变量 | 作用 | 说明 |
 |------|------|------|
-| `OPENAI_API_KEY` | 模型 Key | 默认填 LiteLLM 的 `LITELLM_MASTER_KEY`；直连模式填服务商 Key |
+| `OPENAI_API_KEY` | 模型 Key | 填 LiteLLM 的 `LITELLM_MASTER_KEY` 或 UI 创建的子 Key；直连模式填服务商 Key |
 | `OPENAI_BASE_URL` | 模型地址 | 默认 `http://127.0.0.1:4000/v1`；直连模式填服务商地址 |
 | `OPENAI_DEFAULT_MODEL` | 默认模型名 | 必须和实际模型名一致 |
 | `NACOS_SERVER_ADDRESS` | Nacos 地址 | `http://localhost:8848` |
@@ -587,27 +863,38 @@ LANGFUSE_BASE_URL=http://localhost:3000
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | 没有 Trace，Langfuse 后台是空的 |
 | `TAVILY_API_KEY` | `web_search` 工具调用失败 |
 | `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | `feishu_doc_index` 图跑不了 |
+| `DASHSCOPE_API_KEY` / `DEEPSEEK_API_KEY` / `UPSTREAM_OPENAI_API_KEY` | 网关没有上游 Key，调模型时报 401 |
 | `OPEN_SANDBOX_API_KEY` | `make up` 直接报错退出（compose 要求必填）。它是自建服务的访问口令，自己定随机串即可，不是官方发放的 |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | 文件上传、沙箱共享卷不可用 |
 
 ### 5.3 模型网关
 
-**默认：走 LiteLLM**（和 [3.7](#37-第-7-步配置-litellm-网关添加模型) 对应）
+**默认：走 LiteLLM**（和 [3.11](#311-配置-litellm-网关添加模型) 对应）
 
-1. 打开 <http://localhost:4000/ui>，用 `admin` / `123456` 登录
-2. `Models` → `Add Model`，填上游 Provider、公开模型名、上游地址、上游 Key
-3. 先确认 `GET /v1/models` 能看到刚添加的模型
-4. `.env` 里：
+推荐用配置文件的方式，Key 走环境变量、不进 git：
+
+1. `.env` 里加上游 Key（只填要用的）：
+
+```dotenv
+DASHSCOPE_API_KEY=sk-xxx
+DEEPSEEK_API_KEY=
+UPSTREAM_OPENAI_API_KEY=
+```
+
+2. `litellm-config.yaml` 里配置 `model_list`，`api_key` 写 `os.environ/变量名`
+3. `make restart SERVICE=litellm`
+4. `GET /v1/models` 能看到模型后再填：
 
 ```dotenv
 OPENAI_BASE_URL=http://127.0.0.1:4000/v1
 OPENAI_API_KEY=<docker-compose.yml 里的 LITELLM_MASTER_KEY>
-OPENAI_DEFAULT_MODEL=<UI 里的 Public Model Name>
+OPENAI_DEFAULT_MODEL=<litellm-config.yaml 里的 model_name>
 ```
 
 好处：模型切换、限流、花销统计、Langfuse 追踪都在一起，也是本项目的默认设计。
+完整字段说明和排错见 [3.11.5](#3115-方式-a推荐写进-litellm-configyaml)。
 
-**可选：直连 OpenAI 兼容服务（跳过 3.7）**
+**可选：直连 OpenAI 兼容服务（跳过 3.11）**
 
 ```dotenv
 OPENAI_BASE_URL=https://your-endpoint/v1
@@ -779,9 +1066,9 @@ $gw = @{ Authorization = "Bearer sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89
 (Invoke-RestMethod http://127.0.0.1:4000/v1/models -Headers $gw).data.id
 ```
 
-返回空就说明模型还没加，回到 [3.7](#37-第-7-步配置-litellm-网关添加模型)。
+返回空就说明模型还没加，回到 [3.11](#311-配置-litellm-网关添加模型)。
 
-- 走 LiteLLM：模型名要和 `OPENAI_DEFAULT_MODEL` 完全一致（= UI 里的 Public Model Name）
+- 走 LiteLLM：模型名要和 `OPENAI_DEFAULT_MODEL` 完全一致（= `litellm-config.yaml` 的 `model_name`，或 UI 里的 Public Model Name）
 - `OPENAI_API_KEY` 用 LiteLLM 的 master key，不是上游厂商的 key
 - 直连模式：确认 `OPENAI_BASE_URL` 以 `/v1` 结尾，模型名和服务商文档一致
 
@@ -855,6 +1142,61 @@ docker pull docker.langfuse.com/langfuse/langfuse:4
 ```
 
 改完等 5 秒（`NACOS_TTL=5`）再发一次消息。
+
+### Q12. `uv trampoline failed to canonicalize script path`
+
+完整报错：
+
+```text
+error: uv trampoline failed to canonicalize script path
+make: *** [Makefile:61: test] Error 1
+```
+
+**原因**：`.venv` 是在别的目录创建的，之后整个项目文件夹被移动/重命名了。
+uv 在 Windows 上生成的 `pytest.exe`、`langgraph.exe` 这类启动器里记录的是**绝对路径**，
+文件夹一挪，它们就找不到自己该启动的脚本了。
+
+先确认是不是这个原因：
+
+```powershell
+# 有没有报错，报错就是启动器坏了
+.\.venv\Scripts\pytest.exe --version
+
+# 这条能正常输出 9.x.x，说明虚拟环境本身没坏
+.\.venv\Scripts\python.exe -m pytest --version
+```
+
+前一条报 `uv trampoline...`、后一条正常，就可以确定是启动器问题。
+
+**处理**：重新生成启动器（不用重新下载 Python）：
+
+```powershell
+uv sync --reinstall
+```
+
+如果报 `拒绝访问 python.exe`，说明 VS Code 的 Python 插件（black-formatter 等）正占着这个环境。
+先关掉 VS Code 或结束对应进程，再执行。
+
+如果 `uv sync --reinstall` 卡在下载依赖，见 [Q10](#q10-docker-拉镜像超时--卡住) 的换源思路；
+本机 `~/.config/uv/uv.toml`（或 `%APPDATA%\uv\uv.toml`）里默认源是清华镜像时，
+临时用官方源验证可以：
+
+```powershell
+uv sync --reinstall --default-index https://pypi.org/simple
+```
+
+> 注意：`--default-index` 会把 `uv.lock` 里的源地址一起改写。
+> 验证完记得 `git checkout -- uv.lock` 还原，不要把换源结果提交上去。
+
+**彻底一点**的做法是删掉 `.venv` 重建（需要先结束占用它的进程）：
+
+```powershell
+Remove-Item .venv -Recurse -Force
+uv sync
+make test
+```
+
+**预防**：`.venv` 不要跟着项目一起拷贝或移动。换电脑、换目录后，直接删掉旧 `.venv` 重新 `uv sync`。
 
 ---
 
@@ -942,6 +1284,7 @@ deal-pilot/
 | `make ps` | 查看容器状态 |
 | `make logs` / `make logs SERVICE=nacos` | 查看日志 |
 | `make stop SERVICE=milvus` | 停止指定服务 |
+| `make restart SERVICE=litellm` | 重启指定服务（改完 `litellm-config.yaml` 用） |
 | `make down` | 停止容器，保留数据 |
 | `make clean` | 停止并删除数据卷 |
 | `make dev` | 启动 Agent（`127.0.0.1:2024`） |

@@ -1,4 +1,4 @@
-.PHONY: help env up down clean ps logs stop dev test test-all build
+.PHONY: help env up down clean ps logs restart stop dev test test-all build
 
 # 中文 Windows 下 make 的 recipe 不会继承 shell 里临时设置的编码变量，
 # 而 langgraph / python-dotenv 读 .env、langgraph.json 时按系统默认编码（GBK），
@@ -17,6 +17,7 @@ help:
 	@echo "make logs                        follow all logs"
 	@echo "make logs SERVICE=nacos          follow one service's logs"
 	@echo "make stop SERVICE=milvus         stop one service"
+	@echo "make restart SERVICE=litellm     restart one service (after editing litellm-config.yaml)"
 	@echo "make down                        stop containers, keep volumes"
 	@echo "make clean                       stop containers and delete volumes"
 	@echo "make dev                         start Agent on 127.0.0.1:2024"
@@ -46,6 +47,10 @@ logs:
 
 stop:
 	docker compose stop $(SERVICE)
+
+# 重启某个服务。改了 litellm-config.yaml 后：make restart SERVICE=litellm
+restart:
+	docker compose restart $(SERVICE)
 
 # Agent 开发服务器（统一已开启 PYTHONUTF8，Windows 也能直接跑）
 dev:

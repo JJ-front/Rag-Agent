@@ -1,3 +1,41 @@
+# LiteLLM 网关配置
+# 改完执行：make restart SERVICE=litellm
+# 验证：/v1/models 能看到 model_name
+#
+# 三个名字别混：
+#   model_name      网关对外的名字，要和 .env 的 OPENAI_DEFAULT_MODEL 一致
+#   litellm_params  网关真正去调用的上游模型 / 地址 / Key
+#   api_key         用 os.environ/变量名 从 .env 读取，不要把真实 Key 写进本文件
+
+# 把下面某一整段取消注释，改成你要用的厂商即可。
+# model_list:
+#   # ---- 阿里云百炼（通义千问）----
+#   - model_name: qwen-plus
+#     litellm_params:
+#       model: openai/qwen-plus
+#       api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+#       api_key: os.environ/DASHSCOPE_API_KEY
+#
+#   # ---- DeepSeek ----
+#   - model_name: deepseek-chat
+#     litellm_params:
+#       model: openai/deepseek-chat
+#       api_base: https://api.deepseek.com/v1
+#       api_key: os.environ/DEEPSEEK_API_KEY
+#
+#   # ---- OpenAI ----
+#   - model_name: gpt-4o-mini
+#     litellm_params:
+#       model: openai/gpt-4o-mini
+#       api_key: os.environ/UPSTREAM_OPENAI_API_KEY
+#
+#   # ---- 本地 Ollama ----
+#   - model_name: qwen-local
+#     litellm_params:
+#       model: ollama/qwen2.5:7b
+#       api_base: http://host.docker.internal:11434
+
+# 启用会话粘连
 router_settings:
   optional_pre_call_checks:
     - session_affinity
