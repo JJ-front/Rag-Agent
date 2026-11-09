@@ -379,7 +379,7 @@ $gw = @{ Authorization = "Bearer sk-d09e0b617046b7d70e5b25ae2da70a5c1154ac2f4d89
 
 1. **master key 必须以 `sk-` 开头**，这是 LiteLLM 的格式要求
 2. **不要拿上游厂商的 Key 当 master key**，两者完全不是一个东西
-3. **改 master key 要两处同步**：`docker-compose.yml` 和 `.env` 的 `OPENAI_API_KEY`，然后 `make restart SERVICE=litellm`
+3. **改 master key 要两处同步**：`docker-compose.yml` 和 `.env` 的 `OPENAI_API_KEY`，然后 `make up SERVICE=litellm`（重建容器才会读取新的 `.env`）
 4. 本地开发为了方便才把 master key 写在 compose 里；**真实生产环境**应该用环境变量 / secrets 管理，不要提交到 git
 5. 子 Key 也能填进 `OPENAI_API_KEY`，和 master key 的用法完全一样，区别见下一节
 
@@ -413,10 +413,10 @@ sk-8f3c1e...（示例：sk- 加上 64 位十六进制，共 67 个字符）
 1. `docker-compose.yml` → `LITELLM_MASTER_KEY`
 2. `.env` → `OPENAI_API_KEY`
 
-然后重启网关：
+然后重建网关（`restart` 不会重新读取 `.env`）：
 
 ```powershell
-make restart SERVICE=litellm
+make up SERVICE=litellm
 ```
 
 > 仓库里现在的 `sk-d09e0b...` 就是一段 32 字节随机数的十六进制，只是为了本地开箱即用。
@@ -564,13 +564,16 @@ router_settings:
 > **不要把真实 Key 直接写进 `litellm-config.yaml`**，这个文件是要提交到 git 的。
 > 走 `os.environ/...`，Key 只留在被 `.gitignore` 忽略的 `.env` 里。
 
-##### A3. 重启 LiteLLM
+##### A3. 让 LiteLLM 读取新配置
 
-配置文件是挂载进容器的，改完必须重启才生效：
+配置文件是挂载进容器的，改了 `litellm-config.yaml` 或 `.env` 里的上游 Key 后都要让容器重新读取：
 
 ```powershell
-make restart SERVICE=litellm
+make up SERVICE=litellm
 ```
+
+> `make restart SERVICE=litellm` 只会重启现有容器，不会重新注入 `.env` 的新变量；
+> 第一次填上游 Key 时必须用 `make up SERVICE=litellm`。
 
 ##### A4. 验证模型已经加载
 
@@ -919,7 +922,7 @@ UPSTREAM_OPENAI_API_KEY=
 ```
 
 2. `litellm-config.yaml` 里配置 `model_list`，`api_key` 写 `os.environ/变量名`
-3. `make restart SERVICE=litellm`
+3. `make up SERVICE=litellm`（重建容器，读取新的 `.env`）
 4. `GET /v1/models` 能看到模型后再填：
 
 ```dotenv
@@ -1338,7 +1341,7 @@ deal-pilot/
 | `make ps` | 查看容器状态 |
 | `make logs` / `make logs SERVICE=nacos` | 查看日志 |
 | `make stop SERVICE=milvus` | 停止指定服务 |
-| `make restart SERVICE=litellm` | 重启指定服务（改完 `litellm-config.yaml` 用） |
+| `make restart SERVICE=litellm` | 重启指定服务（只改 `litellm-config.yaml` 时用；改了 `.env` 用 `make up SERVICE=litellm`） |
 | `make down` | 停止容器，保留数据 |
 | `make clean` | 停止并删除数据卷 |
 | `make dev` | 启动 Agent（`127.0.0.1:2024`） |
